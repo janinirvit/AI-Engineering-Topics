@@ -1,0 +1,225 @@
+import csv
+import os
+
+import chromadb
+import pandas as pd
+from chromadb.utils import embedding_functions
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
+
+
+# Load the data
+class EmbeddingModel:
+    def __init__(self, model_type="openai"):
+        self.model_type = model_type
+        if self.model_type == "openai":
+            self.client = OpenAI(api_key=api_key)
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=api_key,
+                model_name="text-embedding-3-small"
+            )
+        elif self.model_type == "chroma":
+            self.embedding_function = embedding_functions.DefaultEmbeddingFunction(
+                model_name="text-embedding-3-small"
+            )
+        elif self.model_type == "nomic":    
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=api_key,
+                api_base=os.getenv("NOMIC_API_BASE"),
+                model_name="nomic-embed-text"
+            )
+
+
+class LLMModel:
+    def __init__(self, model_type="openai"):
+        self.model_type = model_type
+        if self.model_type == "openai":
+            self.client = OpenAI(api_key=api_key)
+            self.model_name = "gpt-4o-mini"
+        else:
+            # Initialize other model here
+            pass
+        
+    def generate_completion(self, message):
+        # Accept either a plain string prompt or a fully-formed list of
+        # chat messages (e.g. [{"role": "system", ...}, {"role": "user", ...}]).
+        messages = message if isinstance(message, list) else [{"role": "user", "content": message}]
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error generating completion: {e}")
+            return f"Error generating response: {e}"
+        
+        
+def select_model(model_type="openai"):
+    print(f"Selecting model of type: {model_type}")
+    print("1. OpenAI GPT-4")
+    print("2. Ollama Llama")
+    
+    while True:
+        choice = input("Select a model (1-2): ").strip()
+        if choice == "1":
+            model_type = "openai"
+            break
+        elif choice == "2":
+            model_type = "ollama"
+            break
+        else:
+            print("Invalid choice. Please try again.")
+    print("\nSelect Embedding Model")
+    print("1. OpenAI")
+    print("2. Chroma")
+    print("3. Nomic")
+
+    while True:
+        embedding_choice = input("Select an embedding model (1-3): ").strip()
+        if embedding_choice == "1":
+            embedding_model = "openai"
+            break
+        elif embedding_choice == "2":
+            embedding_model = "chroma"
+            break
+        elif embedding_choice == "3":
+            embedding_model = "nomic"
+            break
+        else:
+            print("Invalid choice. Please try again.")
+
+    return model_type, embedding_model
+
+def generate_csv(output_path="space_fact.csv"):
+    facts = [
+        {"id": 1, "fact": "The Sun accounts for about 99.86% of the mass in the entire solar system."},
+        {"id": 2, "fact": "A day on Venus is longer than its year."},
+        {"id": 3, "fact": "Neutron stars can spin at a rate of 600 rotations per second."},
+        {"id": 4, "fact": "There are more stars in the universe than grains of sand on all of Earth's beaches."},
+        {"id": 5, "fact": "Jupiter's Great Red Spot is a giant storm that has been raging for over 300 years."},
+        {"id": 6, "fact": "One million Earths could fit inside the Sun."},
+        {"id": 7, "fact": "Light from the Sun takes about 8 minutes and 20 seconds to reach Earth."},
+        {"id": 8, "fact": "Saturn's rings are made mostly of ice particles with a smaller amount of rocky debris and dust."},
+        {"id": 9, "fact": "The footprints left by astronauts on the Moon will likely remain for millions of years."},
+        {"id": 10, "fact": "Black holes can warp space and time due to their immense gravitational pull."},
+    ]
+
+    with open(output_path, mode="w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=["id", "fact"])
+        writer.writeheader()
+        writer.writerows(facts)
+
+    print(f"Generated CSV file with {len(facts)} facts at: {output_path}")
+    return output_path
+
+def load_csv(input_path="space_fact.csv"):
+    df = pd.read_csv(input_path)
+    documents = df["fact"].tolist()
+    print(f"Loaded {len(documents)} documents from CSV.")
+    for doc in documents:
+        print(f" - {doc}")
+    return documents
+
+def setup_chromadb(documents, embedding_model):
+
+    client = chromadb.Client()
+    try:
+        client.delete_collection(name="space_facts")
+    except:  # noqa: S110
+        pass
+    
+    collection = client.create_collection(name="space_facts", embedding_function=embedding_model.embedding_function)
+    
+    collection.add(
+        documents=documents,
+        ids=[str(i) for i in range(len(documents))]
+    )
+
+    print(f"ChromaDB collection created with {len(documents)} documents.")
+    return collection
+
+def find_related_chunks(query, collection, top_k=2):
+    results = collection.query(
+        query_texts=[query],
+        n_results=top_k
+    )
+    print("related chunks found:")
+    for chunk in results["documents"][0]:
+        print(f" - {chunk}")
+    
+    return list(zip(results["documents"][0], 
+                    (results["metadatas"][0] if results["metadatas"][0] else [{}] * len(results["documents"][0]))))
+
+def augment_prompt(query, related_chunks):
+    context = "\n".join([chunk[0] for chunk in related_chunks])
+    augmented_prompt = f"{query}\n\nContext:\n{context}\n\nQuestion: {query}\nAnswer:"
+    
+    print("Augmented prompt:")
+    print(augmented_prompt)
+    
+    return augmented_prompt
+
+def rag_pipeline(query, collection, llm_model, top_k=2):
+    print(f"Running RAG pipeline for query: {query}")
+    related_chunks = find_related_chunks(query, collection, top_k=top_k)
+    augmented_prompt = augment_prompt(query, related_chunks)
+    
+    response = llm_model.generate_completion(
+        [
+            {"role": "system", "content": "You are a helpful assistant who can questions about space but only answer based on the provided sources/documents given."},
+            {"role": "user", "content": augmented_prompt}
+        ]
+    )
+    
+    print("Generated response:")
+    print(response)
+    
+    reference = "\n".join([chunk[0] for chunk in related_chunks])
+    print("Reference context:")
+    print(reference)
+    return response, related_chunks
+
+def main():
+    print("Starting RAG pipeline...")
+    
+    llm_type, embedding_type =select_model()
+    
+    llm_model = LLMModel(llm_type) 
+    embedding_model = EmbeddingModel(embedding_type)
+    
+    print(f"Selected LLM model: {llm_type}")
+    print(f"Selected embedding model: {embedding_type}")
+    
+    generate_csv()
+    documents = load_csv()
+    
+     # Replace with your actual embedding model
+    collection = setup_chromadb(documents, embedding_model)
+    
+    query = ["What are some interesting facts about Sun?",
+             "Tell me about the Black holes."
+            ]
+    
+    for q in query:
+        print("\n" + "=" * 50)
+        print(f"Query: {q}")
+        
+        response, references = rag_pipeline(q, collection, llm_model)
+        print("final result")
+        print("=" * 50)
+        
+        print(f"Response: {response}")
+        print("Reference used")
+        for ref in references:
+            print(f" - {ref[0]}")
+        print("=" * 50)
+        
+
+if __name__ == "__main__":
+    main()
+    
