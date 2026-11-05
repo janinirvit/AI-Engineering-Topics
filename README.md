@@ -53,6 +53,7 @@ The `requirements.txt` includes:
 
 | Package | Used for |
 |---|---|
+| `langchain` | Building LLM apps via the LangChain framework (`langchain_fundamentals/`) |
 | `openai` | Calling the OpenAI Chat Completions API |
 | `python-dotenv` | Loading environment variables (e.g. `OPENAI_API_KEY`) from a `.env` file |
 | `transformers`, `torch` | Running local Hugging Face transformer models (`intro/`) |
@@ -136,6 +137,10 @@ Beginner-friendly introduction to how transformer-based language models work, us
 Introductory examples of calling the OpenAI Chat Completions API directly.
 - **`openai-simple.py`** — The simplest possible OpenAI API call: sends a system + user message and prints the response.
 - **`prompts.py`** — A tour of prompting techniques, including few-shot prompting, direct/zero-shot prompting, chain-of-thought prompting, instruction prompting, role-play prompting, open-ended prompting, temperature/top-p sampling, and streaming responses.
+
+### `langchain_fundamentals/`
+Introductory example of using the LangChain framework instead of calling the OpenAI SDK directly.
+- **`intro_lang.py`** — Minimal LangChain example: initializes a chat model via `init_chat_model("gpt-4o-mini", model_provider="openai")` and sends a single hard-coded prompt, printing the model's response.
 
 ### `context-memory/`
 Demonstrates how to give a chatbot conversational memory (vs. a stateless chatbot) and persist chat history to disk.
