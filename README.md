@@ -141,6 +141,7 @@ Introductory examples of calling the OpenAI Chat Completions API directly.
 ### `langchain_fundamentals/`
 Introductory example of using the LangChain framework instead of calling the OpenAI SDK directly.
 - **`intro_lang.py`** — Minimal LangChain example: initializes a chat model via `init_chat_model("gpt-4o-mini", model_provider="openai")` and sends a single hard-coded prompt, printing the model's response.
+- **`text_loaders.py`** — End-to-end RAG example over a plain-text file: loads `doc/dream.txt` with `TextLoader`, splits it into chunks with `RecursiveCharacterTextSplitter`, cleans/normalizes the chunk text, embeds the chunks with `OpenAIEmbeddings`, and indexes them in an in-memory FAISS vector store. Retrieves the top matching chunks for a query, then feeds them into a `ChatPromptTemplate` → `ChatOpenAI` → `StrOutputParser` chain to generate a context-grounded answer (e.g. a bullet-point summary of the speech).
 
 ### `context-memory/`
 Demonstrates how to give a chatbot conversational memory (vs. a stateless chatbot) and persist chat history to disk.
