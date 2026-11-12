@@ -1,0 +1,199 @@
+from typing import Dict, List
+
+from dotenv import load_dotenv
+from langchain_community.document_loaders import SeleniumURLLoader
+from langchain_community.vectorstores import Chroma
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+load_dotenv()
+
+model_name = "gpt-4o-mini"
+
+documents = [
+    "https://beebom.com/what-is-nft-explained/",
+    "https://beebom.com/how-delete-servers-discord/",
+    "https://beebom.com/how-list-groups-linux/",
+    "https://beebom.com/how-open-port-linux/",
+    "https://beebom.com/linux-vs-windows/",
+]
+
+
+def scrape_documents(urls: List[str]) -> List[Dict]:
+    """Scrape the content of the given URLs using SeleniumURLLoader.
+
+    Args:
+        urls (List[str]): The list of URLs to scrape.
+
+    Returns:
+        List[Dict]: _description_
+    """
+    try:
+        loader = SeleniumURLLoader(urls=urls)
+        raw_docs = loader.load()
+        print(f"Successfully scraped {len(raw_docs)} documents")
+
+        for doc in raw_docs:
+            print(f"Source: {doc.metadata.get('source', 'No Source')}")
+            print(f"Content length: {len(doc.page_content)}")
+
+        return raw_docs
+    except Exception as e:
+        print(f"Error occurred while scraping documents: {e}")
+        return []
+
+
+def split_documents(pages_content: List[Dict]) -> tuple[List[str], List[Dict]]:
+    """Split Documents into smaller text chunks for embedding.
+
+    Args:
+        pages_content (List[Dict]): The list of documents to be split into smaller text chunks.
+
+    Returns:
+        tuple: A tuple containing two elements:
+            - List[str]: The list of text chunks created from the documents.
+            - List[Dict]: The corresponding metadata for each text chunk.
+    """
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    all_texts = []
+    all_metadatas = []
+    for document in pages_content:
+        text = document.page_content
+        source = document.metadata.get("source", "No Source")
+        chunks = text_splitter.split_text(text)
+        for chunk in chunks:
+            all_texts.append(chunk)
+            all_metadatas.append({"source": source})
+
+    print(f"Total chunks created: {len(all_texts)}")
+    return all_texts, all_metadatas
+
+
+def create_vector_store(texts: List[str], metadatas: List[Dict]):
+    """Create a vector store from the given texts and metadatas using OpenAI embeddings.
+
+    Args:
+        texts (List[str]): The list of text chunks to be embedded.
+        metadatas (List[Dict]): The corresponding metadata for each text chunk.
+
+    Returns:
+        Chroma: The created vector store containing the embedded texts and metadata.
+    """
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vector_store = Chroma.from_texts(texts, metadatas=metadatas, embedding=embeddings)
+    return vector_store
+
+
+def setup_qa_chain(db):
+    """
+    Setup a question-answering chain using the provided vector store.
+
+    Args:
+        db: The vector store to be used as the retriever for the QA chain.
+
+    Returns:
+        tuple: A tuple containing the QA chain and the retriever.
+    """
+
+    llm = ChatOpenAI(model=model_name, temperature=0)
+    retriever = db.as_retriever()
+
+    prompt = ChatPromptTemplate.from_template(
+        """
+    Please provide a polite and helpful response to the following question, utilizing the provided context.
+    Ensure that the tone remains professional, courteous, and empathetic,
+    and tailor your response to directly address the inquiry.
+
+### Context:
+{context}
+
+### Question:
+{question}
+
+### Polite Response:
+In your response, consider including:
+- Acknowledge the user’s query and express gratitude for the opportunity to assist.
+- Provide a clear and concise answer that directly addresses the question.
+- Use positive language and maintain a supportive tone throughout.
+- If applicable, include relevant information or resources that could help further.
+- Conclude by inviting any follow-up questions or providing encouragement for the user’s pursuit of information."""
+    )
+
+    chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+    return chain, retriever
+
+
+def process_query(chain_and_retriever, query: str):
+    """
+    Process a user query using the provided QA chain and retriever.
+
+    Args:
+        chain_and_retriever (tuple): A tuple containing the QA chain and the retriever.
+        query (str): The user query to be processed.
+
+    Returns:
+        dict: A dictionary containing the answer and the sources.
+            - "answer" (str): The response generated by the QA chain.
+            - "sources" (str): The sources retrieved for the query.
+    """
+    try:
+        chain, retriever = chain_and_retriever
+
+        response = chain.invoke(query)
+
+        # get then source using retriever
+        docs = retriever.invoke(query)
+        sources = ", ".join([doc.metadata.get("source", "No Source") for doc in docs])
+        return {"answer": response, "sources": sources}
+    except Exception as e:
+        print(f"Error occurred while processing query: {e}")
+        return {"answer": None, "sources": None}
+
+
+def main():
+    # 1. Scrape documents
+    print("Scraping documents...")
+    pages_content = scrape_documents(documents)
+
+    # 2. Split documents into chunks
+    print("Splitting documents into chunks...")
+    all_texts, all_metadatas = split_documents(pages_content)
+
+    # 3. Create vector store
+    print("Creating vector store...")
+    db = create_vector_store(all_texts, all_metadatas)
+
+    # 4. Setup QA chain
+    print("Setting up QA chain...")
+    chain_and_retriever = setup_qa_chain(db)
+
+    # 5. Interactive query loop
+    print("You can now start asking questions. Type 'exit' to quit.")
+    while True:
+        query = input("Your question: ").strip()
+
+        if not query:
+            continue
+
+        if query.lower() == "exit":
+            break
+
+        result = process_query(chain_and_retriever, query)
+
+        print(f"Answer: {result['answer']}")
+
+        if result["sources"]:
+            for source in result["sources"].split(", "):
+                print(f"- {source}")
+
+
+if __name__ == "__main__":
+    main()
