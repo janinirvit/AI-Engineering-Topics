@@ -9,3 +9,6 @@ transformers
 pypdf2
 unstructured
 selenium
+newspaper3k
+lxml-html-clean
+langchain-classic

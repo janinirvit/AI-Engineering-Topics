@@ -53,7 +53,7 @@ The `requirements.txt` includes:
 
 | Package | Used for |
 |---|---|
-| `langchain` | Building LLM apps via the LangChain framework (`langchain_fundamentals/`) |
+| `langchain` | Building LLM apps via the LangChain framework (`langchain_fundamentals/`, `langchain_apps/`) |
 | `openai` | Calling the OpenAI Chat Completions API |
 | `python-dotenv` | Loading environment variables (e.g. `OPENAI_API_KEY`) from a `.env` file |
 | `transformers`, `torch` | Running local Hugging Face transformer models (`intro/`) |
@@ -61,6 +61,7 @@ The `requirements.txt` includes:
 | `pandas` | Reading/handling tabular data such as `space_fact.csv` |
 | `streamlit` | Web UI for the interactive RAG demo |
 | `pypdf2` | Extracting text from PDF files for RAG over documents |
+| `newspaper3k` | Fetching and parsing news articles (`langchain_apps/news_summarizer.py`) |
 
 ### 4. Configure environment variables
 
@@ -154,6 +155,16 @@ Demonstrates how to give a chatbot conversational memory (vs. a stateless chatbo
 Shows how to add structured logging/observability around LLM calls (useful for debugging and monitoring production chatbots).
 - **`chatbot_logging.py`** — A `ChatBot` class that logs every user input and model response as structured JSON (timestamp, session ID, model name, response time, token usage) to both a log file and the console, and logs errors when API calls fail.
 - **`chatbot_logs.json`** — Example JSON-lines log output produced by `chatbot_logging.py`.
+
+### `langchain_apps/`
+Complete, production-ready LangChain applications demonstrating practical AI workflows.
+- **`news_summarizer.py`** — The `NewsArticleSummarizer` class fetches news articles from URLs and summarizes them using OpenAI's GPT models with a map-reduce chain strategy. Features include:
+  - Automatic article fetching and parsing via the `newspaper` library
+  - Configurable summarization styles ("detailed" or "concise")
+  - Flexible model selection (OpenAI GPT models; Ollama support ready to enable)
+  - Intelligent text chunking with `RecursiveCharacterTextSplitter`
+  - Rich output including article metadata (title, authors, publish date) alongside summaries
+  - Easily extended to support additional LLM providers
 
 ### `rag_fundamentals/`
 End-to-end examples of Retrieval-Augmented Generation (RAG): embedding documents, storing them in a vector database (ChromaDB), retrieving relevant context for a query, and augmenting an LLM prompt with that context.
