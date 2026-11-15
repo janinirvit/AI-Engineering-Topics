@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from langchain_classic.chains.summarize import load_summarize_chain
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
+
 # from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,13 +13,25 @@ from newspaper import Article
 
 load_dotenv()
 
-class NewsArticleSummarizer:
-    """Class for summarizing news articles using different language models."""
 
-    def __init__(self, api_key: str = None, model_type: str = "openai", model_name: str = "gpt-4o-mini"):
+class NewsArticleSummarizer:
+    """Class for summarizing news articles using different language models and chain types."""
+
+    # Valid chain types supported by LangChain in this environment
+    # Note: map_rerank requires newer LangChain versions
+    VALID_CHAIN_TYPES = ["stuff", "map_reduce", "refine"]
+
+    def __init__(
+        self,
+        api_key: str = None,
+        model_type: str = "openai",
+        model_name: str = "gpt-4o-mini",
+        chain_type: str = "map_reduce",
+    ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model_type = model_type
         self.model_name = model_name
+        self.chain_type = self._validate_chain_type(chain_type)
 
         if model_type == "openai":
             self.llm = ChatOpenAI(model_name=self.model_name, temperature=0)
@@ -28,6 +41,13 @@ class NewsArticleSummarizer:
             raise ValueError(f"Unsupported model_type: {model_type}")
 
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200, length_function=len)
+
+    def _validate_chain_type(self, chain_type: str) -> str:
+        """Validate and return the chain type, raising an error if invalid."""
+        chain_type_lower = chain_type.lower()
+        if chain_type_lower not in self.VALID_CHAIN_TYPES:
+            raise ValueError(f"Invalid chain_type '{chain_type}'. Must be one of: {', '.join(self.VALID_CHAIN_TYPES)}")
+        return chain_type_lower
 
     def fetch_article(self, url: str) -> Optional[Article]:
         """Fetches and parses a news article from the given URL."""
@@ -45,8 +65,27 @@ class NewsArticleSummarizer:
         chunks = self.splitter.split_text(text)
         return [Document(page_content=chunk) for chunk in chunks]
 
+    def _load_chain(self, map_prompt: PromptTemplate, combine_prompt: PromptTemplate):
+        """Load the summarization chain based on the configured chain_type."""
+        chain_kwargs = {"llm": self.llm, "chain_type": self.chain_type, "verbose": True}
+
+        # Different chain types require different prompt parameters
+        if self.chain_type == "map_reduce":
+            # MAP_REDUCE uses both map and combine prompts
+            chain_kwargs["map_prompt"] = map_prompt
+            chain_kwargs["combine_prompt"] = combine_prompt
+        elif self.chain_type == "stuff":
+            # STUFF chain doesn't use map/combine prompts, uses the prompt directly
+            chain_kwargs["prompt"] = combine_prompt
+        elif self.chain_type == "refine":
+            # REFINE chain uses question_prompt and refine_prompt
+            chain_kwargs["question_prompt"] = map_prompt
+            chain_kwargs["refine_prompt"] = combine_prompt
+
+        return load_summarize_chain(**chain_kwargs)
+
     def summarize_article(self, url: str, summary_type: str = "detailed") -> dict:
-        """Summarizes the given news article."""
+        """Summarizes the given news article using the configured chain type."""
         article = self.fetch_article(url)
         if not article or not article.text:
             return {"error": "No content to summarize."}
@@ -59,25 +98,30 @@ class NewsArticleSummarizer:
             "{text}"
             DETAILED SUMMARY:"""
 
-            combine_prompt_template = """Write a detailed summary of the following text that combines the previous summaries:
+            combine_prompt_template = (
+                """Write a detailed summary of the following text that combines the """
+                """previous summaries:
             "{text}"
             FINAL DETAILED SUMMARY:"""
+            )
 
         else:
             map_prompt_template = """Write a concise summary of the following text:
             "{text}"
             CONCISE SUMMARY:"""
 
-            combine_prompt_template = """Write a concise summary of the following text that combines the previous summaries:
+            combine_prompt_template = (
+                """Write a concise summary of the following text that combines the """
+                """previous summaries:
             "{text}"
             FINAL CONCISE SUMMARY:"""
+            )
 
         map_prompt = PromptTemplate(template=map_prompt_template, input_variables=["text"])
         combine_prompt = PromptTemplate(template=combine_prompt_template, input_variables=["text"])
 
-        chain = load_summarize_chain(
-            self.llm, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, verbose=True
-        )
+        # Load chain using the chain type specified during initialization
+        chain = self._load_chain(map_prompt, combine_prompt)
 
         # Generate summary
         summary = chain.invoke(documents)
@@ -89,6 +133,7 @@ class NewsArticleSummarizer:
             "summary": summary,
             "url": url,
             "model_info": {"type": self.model_type, "name": self.model_name},
+            "chain_type": self.chain_type,
         }
 
 
@@ -121,9 +166,7 @@ def main():
         print(f"Title: {summary['title']}")
         print(f"Authors: {', '.join(summary['authors'])}")
         print(f"Published: {summary['publish_date']}")
-        print(
-            f"Model: {summary['model_info']['type']} - {summary['model_info']['name']}"
-        )
+        print(f"Model: {summary['model_info']['type']} - {summary['model_info']['name']}")
         print(f"Summary:\n{summary['summary']}")
 
         # Print first document content
