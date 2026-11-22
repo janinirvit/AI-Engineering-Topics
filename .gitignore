@@ -16,6 +16,9 @@ __pycache__/
 # Local vector stores
 rag_fundamentals/chromadb/
 
+# Download folder
+/Download
+
 # Documentation files (ignore .md and .txt, but keep .py files)
 *.md
 *.txt
