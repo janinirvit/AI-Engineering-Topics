@@ -165,6 +165,9 @@ Complete, production-ready LangChain applications demonstrating practical AI wor
   - Intelligent text chunking with `RecursiveCharacterTextSplitter`
   - Rich output including article metadata (title, authors, publish date) alongside summaries
   - Easily extended to support additional LLM providers
+- **`streamlit_article_summarizer.py`** — Streamlit web UI built on top of `news_summarizer.py`, letting you paste an article URL, pick a model and chain type (`stuff`, `map_reduce`, `refine`), view the resulting summary alongside article metadata, and export it to a text file.
+- **`test_chain_types.py`** — Unit tests covering chain-type validation, parameter storage, case-insensitivity, and the returned summary dictionary structure for `NewsArticleSummarizer`. Run with `python langchain_apps/test_chain_types.py`.
+- **`README.md`**, **`ARTICLE_SUMMARIZER_README.md`**, **`QUICK_START.md`**, **`STREAMLIT_SETUP_GUIDE.md`** — Overview, detailed feature documentation, a 5-minute quick-start guide, and a full setup/configuration guide for the news summarizer app.
 
 ### `rag_fundamentals/`
 End-to-end examples of Retrieval-Augmented Generation (RAG): embedding documents, storing them in a vector database (ChromaDB), retrieving relevant context for a query, and augmenting an LLM prompt with that context.
